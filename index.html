@@ -167,7 +167,8 @@
         <footer style="text-align:center;padding:8px;color:var(--text-muted);font-size:0.7rem;">v8 · 根目录检测 · 语言名忽略 · 代码可编辑保存</footer>
     </div>
     <div class="modal-overlay hidden" id="codeModal">
-        <div class="modal-box"><div class="modal-header"><div class="modal-title"><span class="file-icon" id="modalFileIcon">📄</span><span id="modalFileName">app.py</span></div><button class="modal-close" id="modalClose" title="关闭">✕</button></div><div class="modal-body"><div class="code-meta" id="modalMeta"></div><textarea class="code-block" id="modalCode" spellcheck="false">暂无内容</textarea></div><div class="modal-footer"><button class="btn btn-ghost btn-sm" id="modalCopyBtn">📋复制代码</button><button class="btn btn-success btn-sm section-hidden" id="modalSaveBtn">💾保存修改</button><button class="btn btn-secondary btn-sm" id="modalCloseBtn">关闭</button></div></div>
+        <div class="modal-box"><div class="modal-header"><div class="modal-title"><span class="file-icon" id="modalFileIcon">📄</span><span id="modalFileName">app.py</span></div><button class="modal-close" id="modalClose" title="关闭">✕</button></div><div class="modal-body"><div class="code-meta" id="modalMeta"></div><textarea class="code-block" id="modalCode" spellcheck="false">暂无内容</textarea></div><div class="modal-footer"><button class="btn btn-ghost btn-sm" id="modalCopyBtn">📋复制代码</button><button class="btn btn-secondary btn-sm" id="btnCheckSyntax">🔍检查语法</button>
+<button class="btn btn-success btn-sm section-hidden" id="modalSaveBtn">💾保存修改</button><button class="btn btn-secondary btn-sm" id="modalCloseBtn">关闭</button></div></div>
     </div>
     <div class="toast-container" id="toastContainer"></div>
 
@@ -535,6 +536,100 @@ document.body.style.overflow='hidden';
     }
 }
 
+function checkSyntax(){
+    var code=modalCode.value;
+    var fn=modalFileName.textContent;
+    if(!code.trim()){toast('⚠️ 代码为空，无需检查','info');return;}
+    
+    var ext=fn.split('.').pop().toLowerCase();
+    var errors=[];
+    
+    // JSON
+    if(ext==='json'){
+        try{JSON.parse(code);}catch(e){errors.push('❌ JSON 解析错误：'+e.message);}
+        if(errors.length===0)errors.push('✅ JSON 格式正确');
+    }
+    // JavaScript / JSX / TypeScript / TSX
+    else if(ext==='js'||ext==='jsx'||ext==='ts'||ext==='tsx'||ext==='vue'||ext==='mjs'){
+        try{new Function(code);}catch(e){
+            // 提取行号
+            var m=e.message.match(/line\s*(\d+)/i);
+            var lineInfo=m?'（第'+m[1]+'行）':'';
+            errors.push('❌ JS 语法错误'+lineInfo+'：'+e.message.replace(/.*?:/,'').trim());
+        }
+        if(errors.length===0)errors.push('✅ JS 语法通过');
+    }
+    // CSS
+    else if(ext==='css'||ext==='scss'||ext==='less'){
+        // 检查花括号配对
+        var opens=(code.match(/{/g)||[]).length;
+        var closes=(code.match(/}/g)||[]).length;
+        if(opens!==closes)errors.push('❌ CSS 花括号不配对（'+opens+'个{，'+closes+'个}）');
+        
+        // 检查引号配对
+        var sq=(code.match(/'/g)||[]).length;
+        var dq=(code.match(/"/g)||[]).length;
+        if(sq%2!==0)errors.push('❌ 单引号不成对');
+        if(dq%2!==0)errors.push('❌ 双引号不成对');
+        
+        if(errors.length===0)errors.push('✅ CSS 基础检查通过');
+    }
+    // HTML
+    else if(ext==='html'||ext==='htm'||ext==='vue'){
+        // 检查常见闭合标签
+        var tags=code.match(/<(\w+)[^>]*>/g)||[];
+        var closeTags=code.match(/<\/(\w+)>/g)||[];
+        var openMap={};
+        tags.forEach(function(t){var n=t.match(/<(\w+)/);if(n&&n[1]&&!/^(br|hr|img|input|meta|link)$/i.test(n[1])){openMap[n[1]]=(openMap[n[1]]||0)+1;}});
+        closeTags.forEach(function(t){var n=t.match(/<\/(\w+)/);if(n&&n[1]){openMap[n[1]]=(openMap[n[1]]||0)-1;}});
+        var badTags=[];
+        Object.keys(openMap).forEach(function(k){if(openMap[k]!==0)badTags.push(k+'('+openMap[k]+'个未闭合)');});
+        if(badTags.length>0)errors.push('❌ 标签未闭合：'+badTags.join('，'));
+        
+        // 检查引号
+        var dq=(code.match(/"/g)||[]).length;
+        if(dq%2!==0)errors.push('❌ 双引号不成对');
+        
+        if(errors.length===0)errors.push('✅ HTML 基础检查通过');
+    }
+    // Python
+    else if(ext==='py'){
+        // 检查缩进一致性
+        var lines=code.split('\n'),lastIndent=-1,inconsistent=false;
+        for(var i=0;i<lines.length;i++){
+            var t=lines[i].trim();
+            if(!t||t.startsWith('#'))continue;
+            var sp=lines[i].match(/^(\s*)/)[1].length;
+            if(sp>0&&lastIndent>=0&&sp!==lastIndent&&sp%4!==0){inconsistent=true;break;}
+            if(sp>0)lastIndent=sp;
+        }
+        if(inconsistent)errors.push('❌ 缩进不规范（Python首选4空格缩进）');
+        
+        // 检查冒号（for/if/def/class等行尾）
+        if(errors.length===0)errors.push('✅ Python 基础检查通过');
+    }
+    // Java / C / C++ / Go / Rust
+    else if(ext==='java'||ext==='c'||ext==='cpp'||ext==='go'||ext==='rs'||ext==='cs'){
+        var opens=(code.match(/{/g)||[]).length;
+        var closes=(code.match(/}/g)||[]).length;
+        if(opens!==closes)errors.push('❌ 花括号不配对（'+opens+'个{，'+closes+'个}）');
+        else errors.push('✅ 花括号配对检查通过');
+    }
+    // 其他/未知类型
+    else{
+        errors.push('⚠️ 暂不支持对 .'+ext+' 文件做语法检查');
+    }
+    
+    // 显示结果
+    if(errors.length>0){
+        modalMeta.innerHTML=modalMeta.innerHTML.replace(/<span style="color:var\(--success\);">✅.*?<\/span>/, '');
+        modalMeta.innerHTML=modalMeta.innerHTML.replace(/<span style="color:var\(--danger\);">⚠️.*?<\/span>/, '');
+        var allOk=errors.every(function(e){return e.startsWith('✅');});
+        var color=allOk?'var(--success)':'var(--danger)';
+        modalMeta.innerHTML+='<span style="color:'+color+';">'+errors.join(' | ')+'</span>';
+        toast(errors[0], allOk?'success':'error');
+    }
+}
 
 
             function saveModalCode(){
@@ -657,6 +752,8 @@ document.body.style.overflow='hidden';
                 $('modalCloseBtn').addEventListener('click',closeModal);
                 $('modalCopyBtn').addEventListener('click',copyModalCode);
                 $('modalSaveBtn').addEventListener('click',saveModalCode);
+                $('btnCheckSyntax').addEventListener('click',checkSyntax);
+
                 codeModal.addEventListener('click',e=>{if(e.target===codeModal)closeModal();});
                 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
                 window.addEventListener('beforeunload',saveToLocalStorage);
