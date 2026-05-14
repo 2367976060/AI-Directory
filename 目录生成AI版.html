@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>文件目录结构生成器 v8</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117; --surface: #161b22; --surface-hover: #1c2333; --border: #30363d;
+            --text-primary: #e6edf3; --text-secondary: #8b949e; --text-muted: #6e7681;
+            --accent: #58a6ff; --accent-glow: rgba(88, 166, 255, 0.25); --success: #3fb950;
+            --success-bg: rgba(63, 185, 80, 0.15); --warning: #d2991d; --warning-bg: rgba(210, 153, 29, 0.15);
+            --danger: #f85149; --danger-bg: rgba(248, 81, 73, 0.15); --folder-color: #58a6ff;
+            --file-color: #8b949e; --ai-purple: #bc8cff; --ai-purple-glow: rgba(188, 140, 255, 0.25);
+            --radius-sm: 8px; --radius: 12px; --radius-lg: 16px; --shadow: 0 4px 24px rgba(0,0,0,0.4);
+            --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+            --font-mono: 'SF Mono','Cascadia Code','JetBrains Mono','Fira Code','Consolas','Monaco',monospace;
+            --font-sans: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        html{font-size:16px;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;scroll-behavior:smooth}
+        body{font-family:var(--font-sans);background:var(--bg);color:var(--text-primary);min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:12px;padding-bottom:max(24px,env(safe-area-inset-bottom));line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+        .app-container{width:100%;max-width:600px;display:flex;flex-direction:column;gap:16px}
+        .app-header{text-align:center;padding:16px 0 8px}
+        .app-header .icon-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:4px}
+        .app-header .logo-icon{font-size:36px;line-height:1;animation:float 3s ease-in-out infinite}
+        @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+        .app-header h1{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;background:linear-gradient(135deg,#58a6ff,#7ee787);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+        .app-header .subtitle{font-size:0.8rem;color:var(--text-muted);margin-top:2px}
+        .mode-tabs{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px;gap:4px}
+        .mode-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;border-radius:10px;font-size:0.85rem;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text-secondary);transition:var(--transition);white-space:nowrap;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+        .mode-tab.active{background:var(--accent);color:#fff;box-shadow:0 0 16px var(--accent-glow)}
+        .mode-tab.ai-mode.active{background:linear-gradient(135deg,#8b5cf6,#a78bfa);box-shadow:0 0 16px var(--ai-purple-glow)}
+        .mode-tab .tab-emoji{font-size:1.1rem}
+        .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);transition:var(--transition)}
+        .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+        .card-title{font-size:0.9rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em}
+        .project-name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .project-name-input{flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);padding:10px 14px;font-size:0.95rem;font-family:var(--font-mono);transition:var(--transition);outline:none;-webkit-appearance:none}
+        .project-name-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+        .project-name-input::placeholder{color:var(--text-muted)}
+        .template-chips{display:flex;flex-wrap:wrap;gap:8px}
+        .chip{display:inline-flex;align-items:center;gap:5px;padding:8px 14px;border-radius:20px;font-size:0.8rem;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text-secondary);transition:var(--transition);white-space:nowrap;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+        .chip:active{transform:scale(0.95)}
+        .chip.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+        .chip .chip-emoji{font-size:1rem}
+        .editor-wrapper{position:relative}
+        .structure-textarea,.ai-paste-textarea{width:100%;min-height:280px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);padding:14px;font-size:0.85rem;font-family:var(--font-mono);line-height:1.7;resize:vertical;outline:none;transition:var(--transition);-webkit-appearance:none;tab-size:4;-moz-tab-size:4}
+        .ai-paste-textarea{min-height:320px;border-color:rgba(188,140,255,0.3)}
+        .ai-paste-textarea:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px var(--ai-purple-glow),inset 0 0 30px rgba(139,92,246,0.04)}
+        .structure-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow),inset 0 0 30px rgba(88,166,255,0.03)}
+        .structure-textarea::placeholder,.ai-paste-textarea::placeholder{color:var(--text-muted);opacity:0.7}
+        .char-count{text-align:right;font-size:0.7rem;color:var(--text-muted);margin-top:6px;padding-right:4px}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border-radius:var(--radius-sm);font-size:0.9rem;font-weight:600;cursor:pointer;border:none;transition:var(--transition);-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;white-space:nowrap;letter-spacing:0.01em;position:relative;overflow:hidden}
+        .btn:active{transform:scale(0.96)}
+        .btn-primary{background:var(--accent);color:#fff;box-shadow:0 2px 16px var(--accent-glow);font-size:1rem;padding:14px 28px;border-radius:var(--radius)}
+        .btn-primary:hover{box-shadow:0 4px 24px rgba(88,166,255,0.4)}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed;box-shadow:none}
+        .btn-ai{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 2px 16px var(--ai-purple-glow);font-size:1rem;padding:14px 28px;border-radius:var(--radius)}
+        .btn-ai:hover{box-shadow:0 4px 24px rgba(139,92,246,0.45)}
+        .btn-ai:disabled{opacity:0.5;cursor:not-allowed;box-shadow:none}
+        .btn-secondary{background:var(--surface-hover);color:var(--text-primary);border:1px solid var(--border)}
+        .btn-secondary:hover{background:var(--border)}
+        .btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid transparent;padding:10px 16px}
+        .btn-ghost:hover{background:var(--surface-hover);border-color:var(--border)}
+        .btn-sm{padding:7px 14px;font-size:0.78rem;border-radius:6px}
+        .btn-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+        .btn-row.centered{justify-content:center}
+        .btn-full{width:100%;justify-content:center}
+        .stat-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:0.75rem;font-weight:600;background:var(--bg);border:1px solid var(--border);color:var(--text-secondary)}
+        .stat-badge.folders{border-color:rgba(88,166,255,0.4);color:var(--folder-color)}
+        .stat-badge.files{border-color:rgba(139,148,158,0.4);color:var(--file-color)}
+        .stat-badge.matched{border-color:rgba(188,140,255,0.5);color:#a78bfa;background:rgba(139,92,246,0.08)}
+        .stat-badge .stat-num{font-size:1.1rem;font-weight:700}
+        .tree-preview{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 10px;max-height:420px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:var(--font-mono);font-size:0.82rem;line-height:1.8}
+        .tree-preview.empty{display:flex;align-items:center;justify-content:center;min-height:100px;color:var(--text-muted);font-family:var(--font-sans);font-size:0.85rem;text-align:center;padding:30px}
+        .tree-node{display:flex;align-items:flex-start;gap:5px;padding:2px 6px;border-radius:4px;cursor:default;transition:var(--transition);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .tree-node:hover{background:var(--surface-hover)}
+        .tree-node.is-file{cursor:pointer}
+        .tree-node.is-file:hover{background:rgba(88,166,255,0.1)}
+        .tree-node .node-icon{flex-shrink:0;width:20px;text-align:center;font-size:0.9rem}
+        .tree-node .node-name{font-weight:500;overflow:hidden;text-overflow:ellipsis}
+        .tree-node.is-folder .node-name{color:var(--folder-color);font-weight:600}
+        .tree-node.is-file .node-name{color:var(--text-primary)}
+        .tree-node .node-comment{color:var(--text-muted);font-style:italic;font-size:0.75rem;margin-left:4px;flex-shrink:1;overflow:hidden;text-overflow:ellipsis}
+        .tree-node .node-badge{display:inline-block;font-size:0.65rem;padding:1px 6px;border-radius:10px;background:rgba(139,92,246,0.2);color:#a78bfa;margin-left:6px;flex-shrink:0}
+        .tree-node .node-badge.has-code{background:rgba(63,185,80,0.2);color:var(--success)}
+        .tree-node .node-badge.no-code{background:rgba(248,81,73,0.15);color:var(--danger)}
+        .indent-0{padding-left:4px}.indent-1{padding-left:22px}.indent-2{padding-left:40px}.indent-3{padding-left:58px}.indent-4{padding-left:76px}.indent-5{padding-left:94px}.indent-6{padding-left:112px}.indent-7{padding-left:130px}
+        .match-list{max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:var(--font-mono);font-size:0.78rem;line-height:1.8}
+        .match-item{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;transition:var(--transition);cursor:pointer}
+        .match-item:hover{background:var(--surface-hover)}
+        .match-item .match-icon{flex-shrink:0}
+        .match-item .match-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);text-decoration:underline;text-decoration-color:rgba(139,148,158,0.3)}
+        .match-item .match-size{flex-shrink:0;font-size:0.7rem;color:var(--text-muted);background:var(--bg);padding:2px 8px;border-radius:10px}
+        .match-item .match-status{flex-shrink:0;font-size:0.7rem}
+        .verify-panel{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-top:10px;max-height:260px;overflow-y:auto}
+        .verify-summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+        .verify-item{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:6px;font-size:0.78rem;font-family:var(--font-mono);cursor:pointer;transition:var(--transition)}
+        .verify-item:hover{background:var(--surface-hover)}
+        .verify-item.matched-file{border-left:3px solid var(--success)}
+        .verify-item.unmatched-file{border-left:3px solid var(--danger)}
+        .verify-item .verify-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .verify-item .verify-icon{flex-shrink:0;margin-right:8px}
+        .modal-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:6px;animation:fadeIn 0.2s ease}
+        .modal-overlay.hidden{display:none}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:0 8px 48px rgba(0,0,0,0.6);width:100%;max-width:96vw;max-height:95vh;max-height:95dvh;display:flex;flex-direction:column;overflow:hidden;animation:slideUp 0.25s ease}
+        @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        .modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+        .modal-title{font-weight:600;font-size:0.95rem;display:flex;align-items:center;gap:8px}
+        .modal-title .file-icon{font-size:1.2rem}
+        .modal-close{width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:var(--transition);-webkit-tap-highlight-color:transparent}
+        .modal-close:hover{background:var(--border);color:var(--text-primary)}
+        .modal-body{flex:1;overflow-y:auto;padding:14px 18px;-webkit-overflow-scrolling:touch}
+        .modal-body .code-block{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-family:var(--font-mono);font-size:0.9rem;line-height:1.6;white-space:pre-wrap;word-break:break-all;overflow-x:auto;color:var(--text-primary);max-height:78vh;overflow-y:auto;min-height:100px;height:auto}
+        .modal-body .no-code{text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem;font-family:var(--font-sans)}
+        .modal-body .code-meta{display:flex;gap:12px;margin-bottom:10px;font-size:0.72rem;color:var(--text-muted);flex-wrap:wrap}
+        .modal-body .code-meta span{background:var(--bg);padding:3px 10px;border-radius:10px;border:1px solid var(--border)}
+        .modal-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+        .empty-hint{color:var(--text-muted);font-size:0.78rem;font-style:italic}
+        .toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:90%;max-width:500px}
+        .toast{padding:12px 18px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:500;text-align:center;animation:toastIn 0.3s ease-out,toastOut 0.3s ease-in forwards;animation-delay:0s,2.4s;box-shadow:var(--shadow);pointer-events:auto}
+        .toast.success{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}
+        .toast.error{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger)}
+        .toast.info{background:var(--accent-glow);color:var(--accent);border:1px solid var(--accent)}
+        @keyframes toastIn{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-20px)}}
+        .loading-dots{display:inline-flex;gap:4px}
+        .loading-dots span{width:6px;height:6px;border-radius:50%;background:currentColor;animation:dotBounce 1.2s infinite}
+        .loading-dots span:nth-child(2){animation-delay:0.2s}.loading-dots span:nth-child(3){animation-delay:0.4s}
+        @keyframes dotBounce{0%,80%,100%{transform:scale(0.4);opacity:0.4}40%{transform:scale(1);opacity:1}}
+        .progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px}
+        .progress-bar .fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.3s ease;width:0%}
+        .section-hidden{display:none!important}
+        #modalCode{background:var(--bg);color:var(--text-primary);border:none;outline:none;resize:both;width:100%;min-width:100%}
+        .btn-success{background:var(--success);color:#fff}
+        @media(max-width:400px){.app-header h1{font-size:1.3rem}.structure-textarea,.ai-paste-textarea{min-height:220px;font-size:0.78rem}.btn{padding:10px 16px;font-size:0.82rem}.btn-primary,.btn-ai{padding:12px 22px;font-size:0.9rem}.tree-preview{font-size:0.75rem;max-height:300px}.card{padding:12px}.modal-body .code-block{font-size:0.8rem;padding:10px}}
+        @media(min-width:768px){.app-container{gap:20px}.structure-textarea,.ai-paste-textarea{min-height:340px;font-size:0.9rem}.tree-preview{max-height:500px;font-size:0.85rem}}
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header"><div class="icon-row"><span class="logo-icon">📂</span><h1>目录结构生成器</h1></div><p class="subtitle">手动编辑 · AI粘贴 · 一键下载ZIP · v8</p></header>
+        <div class="mode-tabs" id="modeTabs">
+            <button class="mode-tab" data-mode="manual"><span class="tab-emoji">✏️</span>手动编辑</button>
+            <button class="mode-tab ai-mode active" data-mode="ai">
+<span class="tab-emoji">🤖</span>AI粘贴</button>
+        </div>
+        <div id="manualSection" class="section-hidden">
+            <div class="card"><div class="card-header"><span class="card-title">📋 项目根目录名</span></div><div class="project-name-row"><input type="text" class="project-name-input" id="projectName" value="excel-helper" placeholder="输入项目文件夹名称" autocomplete="off"><span style="font-size:0.75rem;color:var(--text-muted);">会自动作为ZIP根目录</span></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">📦 快速模板</span></div><div class="template-chips" id="templateChips"><span class="chip active" data-template="excel-helper"><span class="chip-emoji">🐍</span>Excel-Helper</span><span class="chip" data-template="react-app"><span class="chip-emoji">⚛️</span>React App</span><span class="chip" data-template="vue-app"><span class="chip-emoji">💚</span>Vue3 App</span><span class="chip" data-template="simple-web"><span class="chip-emoji">🌐</span>简易Web</span><span class="chip" data-template="empty"><span class="chip-emoji">🆕</span>空白模板</span></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">✏️ 编辑目录结构</span><button class="btn btn-ghost btn-sm" id="btnFormat" title="美化格式">🔧格式化</button></div><div class="editor-wrapper"><textarea class="structure-textarea" id="structureInput" placeholder="在此粘贴或编辑目录结构...&#10;支持树形符号（├── └── │）或纯缩进格式" spellcheck="false"></textarea></div><div class="char-count" id="charCount">0 字符</div><div class="btn-row" style="margin-top:8px;"><button class="btn btn-secondary btn-sm" id="btnParse">🔍解析预览</button><button class="btn btn-ghost btn-sm" id="btnClear">🗑️清空</button><span class="stat-badge folders" id="statFolders" style="margin-left:auto;">📁<span class="stat-num">0</span>文件夹</span><span class="stat-badge files" id="statFiles">📄<span class="stat-num">0</span>文件</span></div></div>
+        </div>
+        <div id="aiSection">
+            <div class="card" style="border-color:rgba(188,140,255,0.25);"><div class="card-header"><span class="card-title" style="color:#a78bfa;">🤖 粘贴AI回答（目录树+代码块）</span></div><div class="editor-wrapper"><textarea class="ai-paste-textarea" id="aiPasteInput" placeholder="将AI（ChatGPT/Claude/DeepSeek等）完整回答粘贴到这里...&#10;&#10;支持格式：&#10;  · 目录树（├── └── 符号或缩进）&#10;  · 代码块（```python 等markdown格式）&#10;  · 标题+文件名（### app.py 或 二、app.js）&#10;&#10;自动识别目录结构并匹配代码到对应文件！" spellcheck="false"></textarea></div><div class="char-count" id="aiCharCount">0 字符</div><div class="btn-row" style="margin-top:8px;"><button class="btn btn-ai btn-sm" id="btnAIParse">🔍智能解析</button><button class="btn btn-ghost btn-sm" id="btnAIClear">🗑️清空</button><span class="stat-badge folders" id="aiStatFolders" style="margin-left:auto;">📁<span class="stat-num">0</span>文件夹</span><span class="stat-badge files" id="aiStatFiles">📄<span class="stat-num">0</span>文件</span><span class="stat-badge matched" id="aiStatMatched">✅<span class="stat-num">0</span>匹配</span></div></div>
+            <div class="card section-hidden" id="aiInfoCard"><div class="card-header"><span class="card-title">📋 提取的项目名</span></div><div class="project-name-row"><input type="text" class="project-name-input" id="aiProjectName" value="" placeholder="自动识别或手动修改" autocomplete="off"></div></div>
+        </div>
+        <div class="card"><div class="card-header"><span class="card-title">👁️ 结构预览</span><span style="font-size:0.7rem;color:var(--text-muted);">共<strong id="previewTotal">0</strong>项 · 点击文件查看/编辑代码</span></div><div class="tree-preview empty" id="treePreview">📭 请编辑目录结构并点击「解析预览」</div><div class="verify-panel section-hidden" id="verifyPanel"></div><div class="match-list section-hidden" id="matchList" style="margin-top:10px;"></div></div>
+        <div class="btn-row centered" style="flex-direction:column;gap:12px;">
+            <button class="btn btn-primary btn-full" id="btnGenerate" style="font-size:1.05rem;">⬇️ 生成并下载ZIP压缩包</button>
+            <div class="btn-row centered"><button class="btn btn-secondary btn-sm" id="btnCopyStructure">📋复制结构文本</button><button class="btn btn-ghost btn-sm" id="btnReset">🔄恢复默认</button></div>
+            <div class="progress-bar" id="progressBar" style="width:100%;display:none;"><div class="fill" id="progressFill"></div></div>
+        </div>
+        <footer style="text-align:center;padding:8px;color:var(--text-muted);font-size:0.7rem;">v8 · 根目录检测 · 语言名忽略 · 代码可编辑保存</footer>
+    </div>
+    <div class="modal-overlay hidden" id="codeModal">
+        <div class="modal-box"><div class="modal-header"><div class="modal-title"><span class="file-icon" id="modalFileIcon">📄</span><span id="modalFileName">app.py</span></div><button class="modal-close" id="modalClose" title="关闭">✕</button></div><div class="modal-body"><div class="code-meta" id="modalMeta"></div><textarea class="code-block" id="modalCode" spellcheck="false">暂无内容</textarea></div><div class="modal-footer"><button class="btn btn-ghost btn-sm" id="modalCopyBtn">📋复制代码</button><button class="btn btn-success btn-sm section-hidden" id="modalSaveBtn">💾保存修改</button><button class="btn btn-secondary btn-sm" id="modalCloseBtn">关闭</button></div></div>
+    </div>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        (function(){
+            const $=id=>document.getElementById(id);
+            const projectNameInput=$('projectName'),structureInput=$('structureInput'),charCount=$('charCount');
+            const treePreview=$('treePreview'),previewTotal=$('previewTotal'),statFolders=$('statFolders'),statFiles=$('statFiles');
+            const progressBar=$('progressBar'),progressFill=$('progressFill'),toastContainer=$('toastContainer'),templateChips=$('templateChips');
+            const matchList=$('matchList'),verifyPanel=$('verifyPanel'),codeModal=$('codeModal');
+            const modalFileIcon=$('modalFileIcon'),modalFileName=$('modalFileName'),modalMeta=$('modalMeta'),modalCode=$('modalCode');
+            const modeTabs=$('modeTabs'),manualSection=$('manualSection'),aiSection=$('aiSection');
+            const aiPasteInput=$('aiPasteInput'),aiCharCount=$('aiCharCount'),aiStatFolders=$('aiStatFolders');
+            const aiStatFiles=$('aiStatFiles'),aiStatMatched=$('aiStatMatched'),aiInfoCard=$('aiInfoCard'),aiProjectName=$('aiProjectName');
+
+            let currentParsedData=null,currentTemplateKey='excel-helper',currentMode='ai';
+            let aiParsedData=null,modalCurrentPath=null;
+            let codeContentMap={},aiMatchedFiles=[];
+
+            const templates={
+                'excel-helper':{name:'excel-helper',structure:`excel-helper/\n├── app.py               # Flask 主服务\n├── requirements.txt     # Python 依赖\n├── core/\n│   ├── excel_reader.py  # 多线程 Excel 读取\n│   ├── compare_engine.py# 多表比对核心\n│   ├── smart_header.py  # 智能表头识别\n│   └── db_cache.py      # SQLite 缓存管理\n├── static/\n│   ├── css/\n│   │   └── style.css    # 深色全局样式\n│   └── js/\n│       ├── app.js       # Vue3 主逻辑\n│       └── utils.js     # 工具函数\n├── templates/\n│   └── index.html       # 单页入口（内联 CDN）\n└── uploads/             # 上传文件临时目录（自动创建）`},
+                'react-app':{name:'my-react-app',structure:`my-react-app/\n├── public/\n│   ├── index.html\n│   └── favicon.ico\n├── src/\n│   ├── components/\n│   │   ├── Header.jsx\n│   │   └── Footer.jsx\n│   ├── pages/\n│   │   ├── Home.jsx\n│   │   └── About.jsx\n│   ├── hooks/\n│   │   └── useAuth.js\n│   ├── App.jsx\n│   ├── main.jsx\n│   └── index.css\n├── package.json\n├── vite.config.js\n└── README.md`},
+                'vue-app':{name:'my-vue-app',structure:`my-vue-app/\n├── public/\n│   └── favicon.ico\n├── src/\n│   ├── components/\n│   │   └── HelloWorld.vue\n│   ├── views/\n│   │   ├── HomeView.vue\n│   │   └── AboutView.vue\n│   ├── router/\n│   │   └── index.js\n│   ├── stores/\n│   │   └── counter.js\n│   ├── App.vue\n│   ├── main.js\n│   └── style.css\n├── index.html\n├── package.json\n├── vite.config.js\n└── README.md`},
+                'simple-web':{name:'simple-site',structure:`simple-site/\n├── index.html\n├── css/\n│   └── style.css\n├── js/\n│   └── main.js\n├── images/\n│   └── logo.png\n└── README.md`},
+                'empty':{name:'new-project',structure:`new-project/\n├── src/\n│   └── main.py\n├── README.md\n└── .gitignore`}
+            };
+
+            // ===== 语言名集合 + 辅助函数 =====
+            const LANG_NAMES=new Set(['plaintext','text','txt','html','htm','css','scss','less','sass','javascript','js','jsx','typescript','ts','tsx','python','py','java','go','rust','rs','c','cpp','csharp','cs','sql','sh','bash','zsh','shell','yaml','yml','json','xml','toml','vue','svelte','markdown','md','mermaid','dockerfile','docker','php','ruby','rb','swift','kotlin','kt','lua','perl','r','matlab','powershell','ps1','bat','cmd']);
+            function isLanguageNameLine(s){const t=s.trim().toLowerCase();return LANG_NAMES.has(t);}
+            function stripLanguageHeader(content){
+                var lines=content.split('\n');
+                while(lines.length>0&&lines[0].trim()==='')lines.shift();
+                if(lines.length>0&&LANG_NAMES.has(lines[0].trim().toLowerCase()))lines.shift();
+                while(lines.length>0&&lines[0].trim()==='')lines.shift();
+                return lines.join('\n');
+            }
+
+            // ===== 文件名清理：从第一个有效字符截取 =====
+            function cleanFileName(raw){
+                let s=raw.trim();
+                const m=s.match(/[a-zA-Z0-9_\u4e00-\u9fff\.]/);
+                if(m&&m.index>0)s=s.substring(m.index);
+                return s.trim();
+            }
+
+            // ===== 解析目录结构 =====
+            function parseStructure(text){
+                const lines=text.split('\n'),items=[];
+                let rootName=null,indentUnit=4,counts=[];
+                for(const line of lines){
+                    const t=line.trim();
+                    if(!t||isLanguageNameLine(t))continue;
+                    if(t.startsWith('#')&&!/[├└│]/.test(t)&&!t.includes('/')&&!t.includes('.'))continue;
+                    const sp=line.match(/^(\s*)/)[1].length;
+                    if(sp>0&&sp<30)counts.push(sp);
+                }
+                if(counts.length>0){const g=(a,b)=>b===0?a:g(b,a%b);let v=counts[0];for(let i=1;i<counts.length;i++)v=g(v,counts[i]);if(v>=2&&v<=8)indentUnit=v;}
+                for(let i=0;i<lines.length;i++){
+                    const rawLine=lines[i],trimmed=rawLine.trim();
+                    if(!trimmed||isLanguageNameLine(trimmed))continue;
+                    if(trimmed.startsWith('#')&&!/[├└│]/.test(trimmed)&&!trimmed.includes('/')&&!trimmed.includes('.'))continue;
+                    const leadingSpaces=rawLine.match(/^(\s*)/)[1].length;
+                    const depth=Math.max(0,Math.round(leadingSpaces/indentUnit));
+                    let cleaned=cleanFileName(trimmed);
+                    if(!cleaned||/^[├└│─+\s\.]+$/.test(cleaned))continue;
+                    let comment='';
+                    const re=cleaned.match(/^(.*?)\s+#\s+(.+)$/);
+                    if(re){cleaned=re[1].trim();comment=re[2].trim();}
+                    const isFolder=cleaned.endsWith('/');
+                    const name=isFolder?cleaned.slice(0,-1).trim():cleaned.trim();
+                    if(!name||name.length===0||/^[\.\/\\]+$/.test(name))continue;
+                    if(rootName===null&&depth===0&&isFolder){rootName=name;continue;}
+                    items.push({name,type:isFolder?'folder':'file',depth,comment,rawLine:trimmed});
+                }
+                if(!rootName)rootName='project';
+                return{rootName,items,indentUnit};
+            }
+
+            // ===== 提取目录树文本 — 捕获根目录行 =====
+            function extractDirectoryTree(text){
+                const lines=text.split('\n');
+                let best=[],cur=[],inTree=false,rootLine=null;
+                for(let i=0;i<lines.length;i++){
+                    const l=lines[i],tree=/[├└│]/.test(l),fence=l.trim().startsWith('```');
+                    const head=/^#{1,4}\s/.test(l.trim())&&!tree,empty=l.trim()==='';
+                    if(isLanguageNameLine(l.trim()))continue;
+                    if(fence){if(inTree&&cur.length>best.length)best=[...cur];inTree=false;cur=[];rootLine=null;i++;while(i<lines.length&&!lines[i].trim().startsWith('```'))i++;continue;}
+                    if(tree){if(!inTree&&rootLine)cur.push(rootLine);inTree=true;cur.push(l);rootLine=null;}
+                    else if(inTree&&empty){if(cur.length>best.length)best=[...cur];inTree=false;cur=[];rootLine=null;}
+                    else if(inTree&&head){if(cur.length>best.length)best=[...cur];inTree=false;cur=[];rootLine=null;}
+                    else if(inTree&&l.trim()&&!fence&&!head){const sp=l.match(/^(\s*)/)[1].length;if(sp>=2)cur.push(l);else{if(cur.length>best.length)best=[...cur];inTree=false;cur=[];rootLine=null;}}
+                    else if(!inTree&&!tree&&!fence&&!head&&l.trim()){
+                        const t=l.trim();
+                        if(t.endsWith('/')&&!/[├└│#]/.test(t)&&!/^\d+[、.)]/.test(t)&&!/^https?:\/\//.test(t)&&t.length<100&&!isLanguageNameLine(t))rootLine=l;
+                    }
+                }
+                if(cur.length>best.length)best=[...cur];
+                if(best.length>0&&!best[0].trim().endsWith('/')){
+                    for(let i=0;i<lines.length;i++){const t=lines[i].trim();if(t.endsWith('/')&&!/[├└│#]/.test(t)&&!isLanguageNameLine(t)&&!/^\d+[、.)]/.test(t)&&!/^https?:\/\//.test(t)&&t.length<100){best.unshift(lines[i]);break;}}
+                }
+                return best.join('\n');
+            }
+
+            // ===== 提取标准 ``` 代码块 =====
+            function extractCodeBlocks(text){
+                const blocks=[],re=/```(\w*)\s*\n([\s\S]*?)```/g;
+                let m;
+                while((m=re.exec(text))!==null){
+                    const lang=m[1].trim(),rawContent=m[2];
+                    const treeChars=(rawContent.match(/[├└│]/g)||[]).length,lc=rawContent.split('\n').length;
+                    if(treeChars>3&&lc<=treeChars+5)continue;
+                    const content=stripLanguageHeader(rawContent);
+                    blocks.push({language:lang,content,startPos:m.index,endPos:m.index+m[0].length});
+                }
+                return blocks;
+            }
+
+            // ===== 从文本中提取文件名 =====
+            function extractFilenameFromText(text){
+                let m=text.match(/#{1,4}\s+.*?([\w.\-]+\.\w{1,10})(?:\s|$)/m);
+                if(m)return m[1].trim();
+                m=text.match(/(?:^|\n)[一二三四五六七八九十]+[、.．]\s*([\w.\-]+\.\w{1,10})/m);
+                if(m)return m[1].trim();
+                m=text.match(/(?:^|\n)\d+[、.)．]\s*([\w.\-]+\.\w{1,10})/m);
+                if(m)return m[1].trim();
+                m=text.match(/\*\*([\w.\-]+\.\w{1,10})\*\*/);
+                if(m)return m[1].trim();
+                m=text.match(/[:=]\s*([\w.\-]+\.\w{1,10})(?:\s|$)/m);
+                if(m)return m[1].trim();
+                return null;
+            }
+
+            // ===== 提取所有标题位置 =====
+            function extractHeadingPositions(text){
+                const positions=[],lines=text.split('\n');
+                let charPos=0;
+                for(let i=0;i<lines.length;i++){
+                    const line=lines[i],trimmed=line.trim();
+                    if(/^#{1,4}\s/.test(trimmed)||/^[一二三四五六七八九十]+[、.．]/.test(trimmed)||/^\d+[、.)．]\s/.test(trimmed)){
+                        const fn=extractFilenameFromText(trimmed);
+                        positions.push({lineIndex:i,charPos,filename:fn,line:trimmed});
+                    }
+                    charPos+=lines[i].length+1;
+                }
+                return positions;
+            }
+
+            // ===== Fallback：从标题之间提取代码 =====
+            function extractCodeBetweenHeadings(text,positions){
+                if(positions.length<1)return[];
+                const blocks=[];
+                for(let i=0;i<positions.length;i++){
+                    const start=positions[i].charPos+positions[i].line.length+1;
+                    const end=(i+1<positions.length)?positions[i+1].charPos:text.length;
+                    let content=text.substring(start,end);
+                    content=content.replace(/^\n+/,'').replace(/\n+$/,'');
+                    if(content.length<10)continue;
+                    const treeChars=(content.match(/[├└│]/g)||[]).length;
+                    if(treeChars>3)continue;
+                    content=stripLanguageHeader(content);
+                    if(content.trim().length<10)continue;
+                    const lang=guessLangByExt(positions[i].filename||'');
+                    blocks.push({language:lang,content:content.trim(),startPos:start,endPos:end,fromFallback:true});
+                }
+                return blocks;
+            }
+
+            function guessLangByExt(fn){
+                const e=(fn||'').split('.').pop().toLowerCase();
+                const m={py:'python',js:'javascript',jsx:'javascript',ts:'typescript',tsx:'typescript',css:'css',scss:'scss',less:'less',html:'html',htm:'html',vue:'vue',json:'json',yaml:'yaml',yml:'yaml',md:'markdown',sql:'sql',sh:'bash',bash:'bash',java:'java',go:'go',rs:'rust',c:'c',cpp:'cpp',txt:'text'};
+                return m[e]||'';
+            }
+
+            // ===== 文件路径计算 =====
+            function getFilePath(fileItem,allItems){
+                const idx=allItems.indexOf(fileItem),parts=[];
+                let cd=fileItem.depth-1;
+                for(let j=idx-1;j>=0&&cd>=0;j--){
+                    if(allItems[j].depth===cd&&allItems[j].type==='folder'){parts.unshift(allItems[j].name);cd--;}
+                }
+                parts.push(fileItem.name);
+                return parts.join('/');
+            }
+
+            // ===== 代码→文件匹配 =====
+            function matchCodeToFiles(parsed,codeBlocks,fullText){
+                const contentMap={},matchedFiles=[];
+                const files=parsed.items.filter(i=>i.type==='file');
+                const byLower={},byPath={};
+                for(const f of files){
+                    const fp=getFilePath(f,parsed.items);
+                    byPath[fp.toLowerCase()]=f;
+                    const ln=f.name.toLowerCase();
+                    if(!byLower[ln])byLower[ln]=[];
+                    byLower[ln].push(f);
+                }
+                const used=new Set();
+                let allBlocks=[...codeBlocks];
+                const headingPositions=extractHeadingPositions(fullText);
+                if(allBlocks.length===0||allBlocks.length<files.length*0.3){
+                    const fallbackBlocks=extractCodeBetweenHeadings(fullText,headingPositions);
+                    for(const fb of fallbackBlocks){
+                        if(!allBlocks.some(b=>Math.abs(b.startPos-fb.startPos)<100))allBlocks.push(fb);
+                    }
+                }
+                for(const block of allBlocks){
+                    const before=fullText.substring(Math.max(0,block.startPos-800),block.startPos);
+                    let matchedFile=null;
+                    const fn=extractFilenameFromText(before);
+                    if(fn){
+                        const key=fn.toLowerCase();
+                        if(byLower[key]){const av=byLower[key].filter(f=>!used.has(f));if(av.length>0){matchedFile=av[0];used.add(matchedFile);}}
+                    }
+                    if(!matchedFile){
+                        const fl=block.content.split('\n')[0]||'';
+                        const im=fl.match(/^[#\/]{1,2}\s*([\w.\-]+\.\w{1,10})(?:\s|$)/);
+                        if(im){const key=im[1].trim().toLowerCase();if(byLower[key]){const av=byLower[key].filter(f=>!used.has(f));if(av.length>0){matchedFile=av[0];used.add(matchedFile);}}}
+                    }
+                    if(!matchedFile&&block.fromFallback&&block._headingFilename){
+                        const key=block._headingFilename.toLowerCase();
+                        if(byLower[key]){const av=byLower[key].filter(f=>!used.has(f));if(av.length>0){matchedFile=av[0];used.add(matchedFile);}}
+                    }
+                    if(matchedFile){
+                        const fp=getFilePath(matchedFile,parsed.items);
+                        contentMap[fp]=block.content;
+                        matchedFiles.push({name:matchedFile.name,path:fp,language:block.language,size:block.content.length});
+                    }
+                }
+                const langExt={python:'py',py:'py',javascript:'js',js:'js',jsx:'jsx',typescript:'ts',ts:'ts',tsx:'tsx',css:'css',scss:'scss',less:'less',html:'html',htm:'html',vue:'vue',json:'json',yaml:'yml',yml:'yml',markdown:'md',md:'md',sql:'sql',sh:'sh',bash:'sh',text:'txt',txt:'txt',java:'java',go:'go',rust:'rs',c:'c',cpp:'cpp'};
+                for(const block of allBlocks){
+                    if(matchedFiles.some(mf=>contentMap[mf.path]===block.content))continue;
+                    const ext=langExt[block.language.toLowerCase()];
+                    if(!ext)continue;
+                    const remaining=files.filter(f=>f.name.toLowerCase().endsWith('.'+ext)&&!used.has(f));
+                    if(remaining.length===1){
+                        const fp=getFilePath(remaining[0],parsed.items);
+                        contentMap[fp]=block.content;used.add(remaining[0]);
+                        matchedFiles.push({name:remaining[0].name,path:fp,language:block.language,size:block.content.length});
+                    }else if(remaining.length>1){
+                        const before=fullText.substring(Math.max(0,block.startPos-500),block.startPos).toLowerCase();
+                        for(const f of remaining){const bn=f.name.replace(/\.[^.]+$/,'').toLowerCase();if(bn.length>2&&before.includes(bn)){const fp=getFilePath(f,parsed.items);contentMap[fp]=block.content;used.add(f);matchedFiles.push({name:f.name,path:fp,language:block.language,size:block.content.length});break;}}
+                    }
+                }
+                return{contentMap,matchedFiles};
+            }
+
+            // ===== AI解析入口 =====
+            function parseAIResponse(){
+                const text=aiPasteInput.value.trim();
+                if(!text){toast('请先粘贴AI回答内容','error');return;}
+                const treeText=extractDirectoryTree(text);
+                if(!treeText){toast('未识别到目录结构，请确认包含树形符号（├── └──）','error');return;}
+                const parsed=parseStructure(treeText);
+                if(!parsed||parsed.items.length===0){toast('目录解析失败，请检查格式','error');return;}
+                const codeBlocks=extractCodeBlocks(text);
+                const mr=matchCodeToFiles(parsed,codeBlocks,text);
+                codeContentMap=mr.contentMap;aiMatchedFiles=mr.matchedFiles;
+                aiParsedData=parsed;aiProjectName.value=parsed.rootName;
+                aiInfoCard.classList.remove('section-hidden');
+                const fc=parsed.items.filter(i=>i.type==='folder').length,flc=parsed.items.filter(i=>i.type==='file').length;
+                aiStatFolders.querySelector('.stat-num').textContent=fc;
+                aiStatFiles.querySelector('.stat-num').textContent=flc;
+                aiStatMatched.querySelector('.stat-num').textContent=Object.keys(codeContentMap).length;
+                renderTree(parsed);renderMatchList();renderVerify();updateStats(parsed);
+                const mc=Object.keys(codeContentMap).length;
+                toast('✅ 解析成功！'+fc+'文件夹，'+flc+'文件，'+mc+'匹配代码'+(flc-mc>0?'，'+(flc-mc)+'未匹配':''),'success');
+            }
+
+            // ===== 渲染 =====
+            function renderTree(parsed){
+                if(!parsed||parsed.items.length===0){treePreview.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);">📭 解析结果为空</div>';treePreview.classList.add('empty');return;}
+                treePreview.classList.remove('empty');
+                let h='<div class="tree-node is-folder indent-0" style="margin-bottom:4px;font-weight:700;"><span class="node-icon">📁</span><span class="node-name">'+esc(parsed.rootName)+'/</span><span class="node-comment" style="color:var(--accent);">根目录</span></div>';
+                const ds=[];
+                for(let i=0;i<parsed.items.length;i++){
+                    const it=parsed.items[i],d=it.depth;
+                    while(ds.length>d)ds.pop();while(ds.length<=d)ds.push(false);
+                    let last=true;
+                    for(let j=i+1;j<parsed.items.length;j++){if(parsed.items[j].depth===d){last=false;break;}if(parsed.items[j].depth<d)break;}
+                    ds[d]=last;
+                    let pre='';for(let dd=1;dd<=d;dd++)pre+=ds[dd]?'    ':'│   ';
+                    pre+=last?'└── ':'├── ';
+                    const icon=it.type==='folder'?'📁':getIcon(it.name),cls=it.type==='folder'?'is-folder':'is-file';
+                    const dn=it.type==='folder'?it.name+'/':it.name;
+                    const cmt=it.comment?' <span class="node-comment"># '+esc(it.comment)+'</span>':'';
+                    const fp=getFilePath(it,parsed.items);
+                    let badge='';
+                    if(it.type==='file'){
+                        const hasCode=codeContentMap&&(codeContentMap[fp]||codeContentMap[it.name]||Object.keys(codeContentMap).some(k=>k.endsWith('/'+it.name)));
+                        if(hasCode)badge=' <span class="node-badge has-code">💾代码</span>';
+                        else if(currentMode==='ai')badge=' <span class="node-badge no-code">⚠️空</span>';
+                    }
+                    h+='<div class="tree-node '+cls+' indent-'+Math.min(d,7)+'" data-filename="'+attr(it.name)+'" data-filepath="'+attr(fp)+'" title="'+attr(pre+dn)+(it.comment?' — '+it.comment:'')+(it.type==='file'?' · 点击编辑代码':'')+'"><span class="node-icon">'+icon+'</span><span class="node-name">'+esc(dn)+'</span>'+cmt+badge+'</div>';
+                }
+                treePreview.innerHTML=h;
+            }
+
+            function renderMatchList(){
+                if(aiMatchedFiles.length===0){matchList.classList.add('section-hidden');return;}
+                matchList.classList.remove('section-hidden');
+                let h='<div style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">📝 匹配到的代码文件（点击可编辑）：</div>';
+                for(const mf of aiMatchedFiles)h+='<div class="match-item" onclick="window._openCodeModal(\''+attr(mf.path)+'\',\''+attr(mf.name)+'\')"><span class="match-icon">'+getIcon(mf.name)+'</span><span class="match-path">'+esc(mf.path)+'</span><span class="match-size">'+fmtSize(mf.size)+'</span><span class="match-status" style="color:var(--success);">✅</span></div>';
+                matchList.innerHTML=h;
+            }
+
+            function renderVerify(){
+                if(!aiParsedData){verifyPanel.classList.add('section-hidden');return;}
+                const files=aiParsedData.items.filter(i=>i.type==='file');
+                if(files.length===0){verifyPanel.classList.add('section-hidden');return;}
+                verifyPanel.classList.remove('section-hidden');
+                const matchedPaths=new Set(Object.keys(codeContentMap));
+                const stats=files.map(f=>{const fp=getFilePath(f,aiParsedData.items);return{file:f,path:fp,matched:matchedPaths.has(fp)||Object.keys(codeContentMap).some(k=>k.endsWith('/'+f.name))};});
+                const mc=stats.filter(s=>s.matched).length,uc=stats.filter(s=>!s.matched).length;
+                let h='<div class="verify-summary"><span class="stat-badge matched" style="border-color:rgba(63,185,80,0.5);color:var(--success);">✅已匹配<span class="stat-num">'+mc+'</span></span><span class="stat-badge" style="border-color:rgba(248,81,73,0.5);color:var(--danger);">⚠️未匹配<span class="stat-num">'+uc+'</span></span></div><div style="font-size:0.78rem;margin-bottom:4px;color:var(--text-secondary);">文件验证列表（点击可编辑）：</div>';
+                for(const s of stats)h+='<div class="verify-item '+(s.matched?'matched-file':'unmatched-file')+'" onclick="window._openCodeModal(\''+attr(s.path)+'\',\''+attr(s.file.name)+'\')"><span class="verify-icon">'+getIcon(s.file.name)+'</span><span class="verify-name">'+esc(s.path)+'</span><span>'+(s.matched?'✅':'❌')+'</span></div>';
+                verifyPanel.innerHTML=h;
+            }
+
+            function updateStats(parsed){if(!parsed||parsed.items.length===0){previewTotal.textContent='0';return;}previewTotal.textContent=parsed.items.length;}
+
+            // ===== 代码预览模态框（可编辑 + 保存）=====
+            function openCodeModal(fp,fn){
+                modalFileIcon.textContent=getIcon(fn);modalFileName.textContent=fn;
+                modalCurrentPath=fp;
+                let code=codeContentMap[fp]||codeContentMap[fn]||null;
+                if(!code&&codeContentMap){for(const[k,v]of Object.entries(codeContentMap)){if(k.endsWith('/'+fn)||k===fn){code=v;modalCurrentPath=k;break;}}}
+                if(code){
+                    modalCode.value=code;modalCode.classList.remove('empty-hint');
+                    modalMeta.innerHTML='<span>📝'+code.split('\n').length+'行</span><span>🔤'+fmtSize(code.length)+'</span><span>📄'+esc(modalCurrentPath)+'</span><span style="color:var(--success);">✅已匹配 — 可直接编辑后保存</span>';
+                }else{
+                    const ph=genPlaceholder({name:fn,comment:''});
+                    modalCode.value=ph||'';
+                    modalCode.classList.add('empty-hint');
+                    modalMeta.innerHTML='<span>📄'+esc(modalCurrentPath)+'</span><span style="color:var(--danger);">⚠️未匹配到代码 — 可手动输入后保存</span>';
+                }
+                $('modalSaveBtn').classList.remove('section-hidden');
+                autoSizeCodeArea();
+codeModal.classList.remove('hidden');document.body.style.overflow='hidden';
+document.body.style.overflow='hidden';
+            }
+            window._openCodeModal=openCodeModal;
+
+            function closeModal(){modalCode.style.height='';modalCode.style.overflowY='';codeModal.classList.add('hidden');document.body.style.overflow='';}
+            function copyModalCode(){const c=modalCode.value;if(!c.trim()){toast('没有可复制的代码','info');return;}copyText(c);}
+            
+            function autoSizeCodeArea(){
+    var code=modalCode.value||'';
+    var lines=code.split('\n').length;
+    if(lines<1)lines=1;
+    var lineH=23;          // 每行像素
+    var pad=30;            // 上下padding+border
+    var maxH=window.innerHeight-20;
+    var maxCodeH=Math.floor(maxH*0.78);
+
+    var needH=lines*lineH+pad;
+    if(needH+10<=maxCodeH){
+        // 装得下：高度 = 内容高度 + 10px 余量
+        modalCode.style.overflowY='hidden';
+        modalCode.style.height=(needH+10)+'px';
+    }else{
+        // 装不下：撑到最大高度 + 滚动条
+        modalCode.style.overflowY='auto';
+        modalCode.style.height=maxCodeH+'px';
+    }
+}
+
+
+
+            function saveModalCode(){
+                if(!modalCurrentPath)return;
+                codeContentMap[modalCurrentPath]=modalCode.value;
+                modalMeta.innerHTML=modalMeta.innerHTML.replace(/⚠️.*?<\/span>/,'<span style="color:var(--success);">✅已手动保存</span>');
+                toast('💾 已保存到 '+modalCurrentPath,'success');
+                if(aiParsedData){renderVerify();renderTree(aiParsedData);renderMatchList();}
+                if(currentParsedData)renderTree(currentParsedData);
+            }
+
+            function genPlaceholder(it){
+                const ext=it.name.split('.').pop().toLowerCase(),cmt=it.comment||'';
+                if(cmt){const pre={py:'# ',js:'// ',jsx:'// ',ts:'// ',tsx:'// ',css:'/* ',scss:'/* ',html:'<!-- ',vue:'<!-- ',sh:'# ',yml:'# ',yaml:'# ',md:'# ',sql:'-- '};const p=pre[ext]||'# ';const s=(ext==='css'||ext==='scss')?' */\n\n':(ext==='html'||ext==='vue')?' -->\n\n':'\n\n';return p+cmt+s;}
+                const defs={'requirements.txt':'# Python 依赖\n','package.json':'{\n  "name": "project",\n  "version": "1.0.0",\n  "description": ""\n}\n','README.md':'# 项目说明\n\n在此编写项目文档。\n','.gitignore':'# 忽略文件\nnode_modules/\n__pycache__/\n*.pyc\n.env\n','index.html':'<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n  <meta charset="UTF-8">\n  <title>Document</title>\n</head>\n<body>\n  \n</body>\n</html>\n','app.py':'# 主服务入口\n\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()\n','main.js':'// 主入口文件\n\nconsole.log("Hello World!");\n','main.jsx':'// React 主入口\nimport React from "react";\nimport ReactDOM from "react-dom/client";\n\nconst App = () => <div>Hello World!</div>;\n\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\n'};
+                return defs[it.name.toLowerCase()]||'';
+            }
+
+            // ===== 生成ZIP =====
+            async function generateZip(){
+                let data=getActiveParsedData();const pn=getActiveProjectName();
+                if(!data||data.items.length===0){if(currentMode==='ai'){parseAIResponse();data=aiParsedData;}else{parseAndPreview();data=currentParsedData;}if(!data||data.items.length===0){toast('请先编辑/粘贴有效的目录结构','error');return;}}
+                data.rootName=pn||data.rootName||'project';
+                if(typeof JSZip==='undefined'){toast('JSZip加载失败，请检查网络后刷新页面','error');return;}
+                const btn=$('btnGenerate'),orig=btn.textContent;
+                btn.disabled=true;btn.innerHTML='<span class="loading-dots"><span></span><span></span><span></span></span>正在生成...';
+                progressBar.style.display='block';progressFill.style.width='0%';
+                try{
+                    const zip=new JSZip(),rp=data.rootName+'/',total=data.items.length;
+                    let done=0;const fpset=new Set();
+                    for(const it of data.items){
+                        const fp=getFilePath(it,data.items),full=rp+fp;
+                        if(it.type==='folder'){zip.folder(full);fpset.add(full+'/');}
+                        else{
+                            let content=null;
+                            if(codeContentMap){if(codeContentMap[fp])content=codeContentMap[fp];else if(codeContentMap[it.name])content=codeContentMap[it.name];else{for(const[k,v]of Object.entries(codeContentMap)){if(k.endsWith('/'+it.name)){content=v;break;}}}}
+                            if(!content)content=genPlaceholder(it);
+                            zip.file(full,content);
+                        }
+                        done++;progressFill.style.width=Math.round((done/total)*90)+'%';
+                        if(done%15===0)await slp(10);
+                    }
+                    if(!fpset.has(rp))zip.folder(rp);
+                    progressFill.style.width='95%';await slp(50);
+                    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},meta=>{progressFill.style.width=Math.min(95+Math.round(meta.percent/100*5),100)+'%';});
+                    progressFill.style.width='100%';await slp(100);
+                    const zfn=data.rootName+'.zip';
+                    if(typeof saveAs!=='undefined')saveAs(blob,zfn);
+                    else{const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=zfn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);}
+                    const cc=codeContentMap?Object.keys(codeContentMap).length:0;
+                    toast('✅ 成功生成 '+zfn+'（'+fmtSize(blob.size)+'）'+(cc>0?'，含'+cc+'个代码文件':''),'success');
+                }catch(e){console.error(e);toast('生成失败：'+e.message,'error');}
+                finally{btn.disabled=false;btn.textContent=orig;setTimeout(()=>{progressBar.style.display='none';progressFill.style.width='0%';},800);}
+            }
+
+            function getActiveParsedData(){return currentMode==='ai'?aiParsedData:currentParsedData;}
+            function getActiveProjectName(){return currentMode==='ai'?(aiProjectName.value.trim()||(aiParsedData?aiParsedData.rootName:'project')):(projectNameInput.value.trim()||(currentParsedData?currentParsedData.rootName:'project'));}
+
+            // ===== 手动模式 =====
+            function parseAndPreview(){
+                const t=structureInput.value;
+                if(!t.trim()){treePreview.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);">📭 请编辑目录结构并点击「解析预览」</div>';treePreview.classList.add('empty');statFolders.querySelector('.stat-num').textContent='0';statFiles.querySelector('.stat-num').textContent='0';previewTotal.textContent='0';currentParsedData=null;return;}
+                const parsed=parseStructure(t);currentParsedData=parsed;projectNameInput.value=parsed.rootName;
+                statFolders.querySelector('.stat-num').textContent=parsed.items.filter(i=>i.type==='folder').length;
+                statFiles.querySelector('.stat-num').textContent=parsed.items.filter(i=>i.type==='file').length;
+                previewTotal.textContent=parsed.items.length;renderTree(parsed);
+            }
+            function quickStats(){const t=structureInput.value;if(!t.trim()){statFolders.querySelector('.stat-num').textContent='0';statFiles.querySelector('.stat-num').textContent='0';previewTotal.textContent='0';return;}const p=parseStructure(t);statFolders.querySelector('.stat-num').textContent=p.items.filter(i=>i.type==='folder').length;statFiles.querySelector('.stat-num').textContent=p.items.filter(i=>i.type==='file').length;previewTotal.textContent=p.items.length;}
+
+            function formatStructure(){
+                const t=structureInput.value.trim();if(!t){toast('没有可格式化的内容','info');return;}
+                const p=parseStructure(t);if(!p||p.items.length===0){toast('无法解析当前内容','error');return;}
+                let f=p.rootName+'/\n';const ds=[];
+                for(let i=0;i<p.items.length;i++){const it=p.items[i],d=it.depth;while(ds.length>d)ds.pop();while(ds.length<=d)ds.push(false);let last=true;for(let j=i+1;j<p.items.length;j++){if(p.items[j].depth===d){last=false;break;}if(p.items[j].depth<d)break;}ds[d]=last;let pre='';for(let dd=1;dd<=d;dd++)pre+=ds[dd]?'    ':'│   ';pre+=last?'└── ':'├── ';f+=pre+(it.type==='folder'?it.name+'/':it.name)+(it.comment?'   # '+it.comment:'')+'\n';}
+                structureInput.value=f.trimEnd();onInputChange();parseAndPreview();toast('🔧已格式化','success');
+            }
+
+            function loadTemplate(key){const t=templates[key];if(!t)return;currentTemplateKey=key;projectNameInput.value=t.name;structureInput.value=t.structure;onInputChange();parseAndPreview();document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));const ac=document.querySelector('.chip[data-template="'+key+'"]');if(ac)ac.classList.add('active');}
+
+            function clearAll(){structureInput.value='';projectNameInput.value='new-project';currentParsedData=null;onInputChange();treePreview.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);">📭已清空</div>';treePreview.classList.add('empty');statFolders.querySelector('.stat-num').textContent='0';statFiles.querySelector('.stat-num').textContent='0';previewTotal.textContent='0';currentTemplateKey=null;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));toast('已清空','info');}
+            function clearAI(){aiPasteInput.value='';aiCharCount.textContent='0字符';aiParsedData=null;codeContentMap={};aiMatchedFiles=[];aiInfoCard.classList.add('section-hidden');matchList.classList.add('section-hidden');verifyPanel.classList.add('section-hidden');aiStatFolders.querySelector('.stat-num').textContent='0';aiStatFiles.querySelector('.stat-num').textContent='0';aiStatMatched.querySelector('.stat-num').textContent='0';if(currentMode==='ai'){treePreview.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);">🤖请粘贴AI回答并点击「智能解析」</div>';treePreview.classList.add('empty');previewTotal.textContent='0';}toast('已清空','info');}
+
+            function switchMode(mode){currentMode=mode;document.querySelectorAll('.mode-tab').forEach(t=>t.classList.remove('active'));const at=document.querySelector('.mode-tab[data-mode="'+mode+'"]');if(at)at.classList.add('active');if(mode==='manual'){manualSection.classList.remove('section-hidden');aiSection.classList.add('section-hidden');aiInfoCard.classList.add('section-hidden');matchList.classList.add('section-hidden');verifyPanel.classList.add('section-hidden');if(currentParsedData)renderTree(currentParsedData);updateStats(currentParsedData);}else{manualSection.classList.add('section-hidden');aiSection.classList.remove('section-hidden');if(aiParsedData){aiInfoCard.classList.remove('section-hidden');renderTree(aiParsedData);renderMatchList();renderVerify();updateStats(aiParsedData);}else{aiInfoCard.classList.add('section-hidden');matchList.classList.add('section-hidden');verifyPanel.classList.add('section-hidden');treePreview.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);">🤖请粘贴AI回答并点击「智能解析」</div>';treePreview.classList.add('empty');previewTotal.textContent='0';}}}
+
+            // ===== 工具函数 =====
+            function getIcon(fn){const e=fn.split('.').pop().toLowerCase();const m={py:'🐍',js:'📜',jsx:'⚛️',ts:'📘',tsx:'⚛️',css:'🎨',scss:'🎨',less:'🎨',html:'🌐',htm:'🌐',vue:'💚',json:'📋',xml:'📋',yaml:'📋',yml:'📋',toml:'📋',md:'📝',txt:'📝',log:'📝',gitignore:'🔧',env:'🔧',lock:'🔒',svg:'🖼️',png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',ico:'🖼️',sh:'💻',bash:'💻',zsh:'💻',dockerfile:'🐳',sql:'🗄️',db:'🗄️',java:'☕',go:'🔵',rs:'🦀',cpp:'⚙️',c:'⚙️',h:'⚙️'};return m[e]||'📄';}
+            function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+            function attr(s){return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');}
+            function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB';}
+            function slp(ms){return new Promise(r=>setTimeout(r,ms));}
+            function toast(msg,type){type=type||'info';const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;toastContainer.appendChild(t);setTimeout(()=>{if(t.parentNode)t.remove();},2800);}
+            function copyText(text){if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>toast('📋已复制','success')).catch(()=>fallbackCopy(text));}else fallbackCopy(text);}
+            function fallbackCopy(text){const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;opacity:0;';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('📋已复制','success');}catch(e){toast('复制失败','error');}document.body.removeChild(ta);}
+            function copyStructure(){const t=currentMode==='ai'?aiPasteInput.value:structureInput.value;if(!t.trim()){toast('没有可复制的内容','error');return;}copyText(t);}
+            function onInputChange(){const len=structureInput.value.length;charCount.textContent=len+'字符';charCount.style.color=len>5000?'var(--warning)':'var(--text-muted)';quickStats();}
+            function onProjectNameChange(){if(currentParsedData)currentParsedData.rootName=projectNameInput.value.trim()||'project';}
+            function onAIPasteChange(){aiCharCount.textContent=aiPasteInput.value.length+'字符';}
+            function onAIProjectNameChange(){if(aiParsedData)aiParsedData.rootName=aiProjectName.value.trim()||'project';}
+            function saveToLocalStorage(){try{const d={projectName:projectNameInput.value,structure:structureInput.value,templateKey:currentTemplateKey,currentMode,aiPaste:aiPasteInput.value,aiProjectName:aiProjectName.value};localStorage.setItem('dir-gen-v8',JSON.stringify(d));}catch(e){}}
+            function loadFromLocalStorage(){try{const r=localStorage.getItem('dir-gen-v8');if(r){const d=JSON.parse(r);if(d.structure&&d.structure.trim()){structureInput.value=d.structure;projectNameInput.value=d.projectName||'excel-helper';if(d.templateKey&&templates[d.templateKey]){currentTemplateKey=d.templateKey;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));const ac=document.querySelector('.chip[data-template="'+d.templateKey+'"]');if(ac)ac.classList.add('active');}onInputChange();parseAndPreview();}if(d.aiPaste){aiPasteInput.value=d.aiPaste;aiProjectName.value=d.aiProjectName||'';onAIPasteChange();}if(d.currentMode)switchMode(d.currentMode);return;}}catch(e){}loadTemplate('excel-helper');}
+
+            // ===== 事件绑定 =====
+            function bind(){
+                structureInput.addEventListener('input',onInputChange);
+                projectNameInput.addEventListener('input',onProjectNameChange);
+                $('btnParse').addEventListener('click',parseAndPreview);
+                $('btnGenerate').addEventListener('click',generateZip);
+                $('btnClear').addEventListener('click',clearAll);
+                $('btnReset').addEventListener('click',()=>loadTemplate('excel-helper'));
+                $('btnCopyStructure').addEventListener('click',copyStructure);
+                $('btnFormat').addEventListener('click',formatStructure);
+                templateChips.addEventListener('click',e=>{const chip=e.target.closest('.chip');if(!chip)return;const k=chip.dataset.template;if(k&&k!==currentTemplateKey)loadTemplate(k);});
+                treePreview.addEventListener('click',e=>{const node=e.target.closest('.tree-node.is-file');if(!node)return;openCodeModal(node.dataset.filepath,node.dataset.filename);});
+                modeTabs.addEventListener('click',e=>{const tab=e.target.closest('.mode-tab');if(!tab)return;const m=tab.dataset.mode;if(m&&m!==currentMode)switchMode(m);});
+                aiPasteInput.addEventListener('input',onAIPasteChange);
+                aiProjectName.addEventListener('input',onAIProjectNameChange);
+                $('btnAIParse').addEventListener('click',parseAIResponse);
+                $('btnAIClear').addEventListener('click',clearAI);
+                $('modalClose').addEventListener('click',closeModal);
+                $('modalCloseBtn').addEventListener('click',closeModal);
+                $('modalCopyBtn').addEventListener('click',copyModalCode);
+                $('modalSaveBtn').addEventListener('click',saveModalCode);
+                codeModal.addEventListener('click',e=>{if(e.target===codeModal)closeModal();});
+                document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+                window.addEventListener('beforeunload',saveToLocalStorage);
+            }
+            bind();loadFromLocalStorage();
+
+            window.DirGenerator={loadTemplate,parseAndPreview,generateZip,clearAll,parseAIResponse,clearAI,switchMode,getCurrentData:getActiveParsedData,getCodeContentMap:()=>codeContentMap,openCodeModal,toast};
+            console.log('📂 目录结构生成器 v8 已就绪');
+            console.log('   ✅ 根目录检测 · 语言名忽略 · 代码可编辑保存');
+            console.log('   🎯 标题匹配：中文序号/数字序号/粗体/赋值语法');
+            console.log('   👁️ 点击文件→编辑代码→💾保存修改');
+        })();
+    </script>
+</body>
+</html>
