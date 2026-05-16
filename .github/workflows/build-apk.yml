@@ -5,11 +5,12 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
@@ -31,26 +32,14 @@ jobs:
             libffi-dev libssl-dev ccache \
             libltdl-dev
 
-      - name: Debug - check environment
-        run: |
-          java -version
-          python3 --version
-          pip3 --version
-          which buildozer || echo "buildozer not installed yet"
-
       - name: Install Buildozer
         run: |
           pip install --upgrade pip setuptools wheel
           pip install --upgrade buildozer cython
 
-      - name: Debug - verify buildozer
-        run: |
-          which buildozer
-          buildozer --version
-          ls -la buildozer.spec
-
       - name: Build APK
         run: |
+          ls -la buildozer.spec
           buildozer android debug 2>&1
         shell: bash
 
