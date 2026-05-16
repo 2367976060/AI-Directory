@@ -1,0 +1,44 @@
+{
+    "theme": "light",
+    "current_provider": "openai_compat",
+    "providers": {
+        "openai_compat": {
+            "api_key": "",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-4o",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 120,
+            "max_retries": 3
+        },
+        "anthropic": {
+            "api_key": "",
+            "base_url": "https://api.anthropic.com",
+            "model": "claude-sonnet-4-20250514",
+            "api_version": "2023-06-01",
+            "temperature": 0.7,
+            "max_tokens": 8192,
+            "timeout": 120,
+            "max_retries": 3
+        },
+        "deepseek": {
+            "api_key": "",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
+            "temperature": 0.7,
+            "max_tokens": 8192,
+            "timeout": 120,
+            "max_retries": 3
+        },
+        "custom": {
+            "api_key": "",
+            "base_url": "",
+            "model": "",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 120,
+            "max_retries": 3
+        }
+    },
+    "output_dir": ""
+}

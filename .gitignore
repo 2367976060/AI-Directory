@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+bin/
+.buildozer/
+.DS_Store
+*.spec
+*.ini
+*.md
+*.log
