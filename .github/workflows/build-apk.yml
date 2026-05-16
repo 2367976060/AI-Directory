@@ -11,16 +11,19 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container:
-      image: kivy/buildozer:latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build APK with Buildozer
+      - name: Build APK using Kivy Buildozer Docker image
         run: |
-          buildozer android debug 2>&1
+          docker pull kivy/buildozer:latest
+          docker run --rm \
+            -v "$(pwd):/home/user/hostcwd" \
+            -v "$(pwd)/.buildozer:/home/user/.buildozer" \
+            kivy/buildozer:latest \
+            buildozer android debug 2>&1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
